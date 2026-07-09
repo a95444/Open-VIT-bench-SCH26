@@ -91,6 +91,10 @@ vit_float RowVector::at(vit_size i) const {
     return data[i];
 }
 
+const vit_float* RowVector::get_data() const {
+    return data;
+}
+
 void RowVector::set(vit_size i, vit_float val) {
     assert(i<DIM);
     data[i] = val;
@@ -240,6 +244,10 @@ vit_float Matrix::at(vit_size i, vit_size j) const {
     assert(i<ROWS);
     assert(j<COLS);
     return data[j + (i*COLS)];
+}
+
+const vit_float* Matrix::get_data() const {
+    return data;
 }
 
 void Matrix::set(vit_size i, vit_size j, vit_float val) {
@@ -413,6 +421,10 @@ vit_float Tensor::at(vit_size b, vit_size n, vit_size c) const {
     assert(n<N);
     assert(c<C);
     return data[c + (n*C) + (b*N*C)];
+}
+
+const vit_float* Tensor::get_data() const {
+    return data;
 }
 
 void Tensor::set(vit_size b, vit_size n, vit_size c, vit_float val) {

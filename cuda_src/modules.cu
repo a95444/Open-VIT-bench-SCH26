@@ -259,6 +259,7 @@ void LayerNorm::operator()(Tensor& x, vit_size num_heads, vit_size head_dim) con
     vit_float var;
     vit_float st_dev;
     vit_float new_val;
+    #pragma omp parallel for collapse(3) private(mean, var, st_dev, new_val) schedule(dynamic)
     for (int i=0;i<x.get_B();++i) {
         for (int j=0;j<x.get_N();++j) {
             for (int k=0;k<num_heads;++k) {
@@ -357,6 +358,7 @@ LayerScale& LayerScale::operator= (const LayerScale& ln) {
 }
 
 void LayerScale::operator()(Tensor& x) const {
+    #pragma omp parallel for collapse(3) schedule(static)
     for (int i=0;i<x.get_B();++i) {
         for (int j=0;j<x.get_N();++j) {
             for (int k=0;k<x.get_C();++k) {
@@ -415,6 +417,7 @@ Activation& Activation::operator= (const Activation& a) {
 void Activation::operator()(Tensor& x) const {
     VIT_NVTX_RANGE("gelu");
     vit_float val;
+    #pragma omp parallel for collapse(3) private(val) schedule(static)
     for (int i=0;i<x.get_B();++i) {
         for (int j=0;j<x.get_N();++j) {
             for (int k=0;k<x.get_C();++k) {
@@ -498,6 +501,7 @@ void global_pool_nlc (
 
     switch (pt) {
     case pool_token:
+        #pragma omp parallel for collapse(2) private(val) schedule(static)
         for (int i=0;i<x_in.get_B();++i) {
             for (int k=0;k<x_in.get_C();++k) {
                 val = x_in.at(i, 0, k);
@@ -506,6 +510,7 @@ void global_pool_nlc (
         }
         break;
     case pool_avg:
+        #pragma omp parallel for collapse(2) private(avg_val) schedule(static)
         for (int i=0;i<x_in.get_B();++i) {
             for (int k=0;k<x_in.get_C();++k) {
                 avg_val = x_in.at(i, start_N, k);
@@ -518,6 +523,7 @@ void global_pool_nlc (
         }
         break;
     case pool_max:
+        #pragma omp parallel for collapse(2) private(max_val,val) schedule(static)
         for (int i=0;i<x_in.get_B();++i) {
             for (int k=0;k<x_in.get_C();++k) {
                 max_val = x_in.at(i, start_N, k);
@@ -530,6 +536,7 @@ void global_pool_nlc (
         }
         break;
     case pool_avgmax:
+        #pragma omp parallel for collapse(2) private(avg_val,max_val,val) schedule(static)
         for (int i=0;i<x_in.get_B();++i) {
             for (int k=0;k<x_in.get_C();++k) {
                 avg_val = x_in.at(i, start_N, k);

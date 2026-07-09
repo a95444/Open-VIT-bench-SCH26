@@ -250,24 +250,28 @@ $(PROF_OBJ_FOLDER)/main.o
 .PHONY : cuda
 cuda : $(CUDA_BIN_FOLDER)/vit.exe
 
-# the CUDA translation unit (holds linear_kernel)
+# the CUDA translation unit (holds linear_kernel). Its CPU ops
+# (layernorm/gelu/layerscale/pool) are OpenMP-parallelised, so build the host
+# side with OpenMP via -Xcompiler.
 $(CUDA_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
 	@mkdir -p $(@D)
-	$(NVCC) -c $(NVCCFLAGS) $< -o $@
+	$(NVCC) -c $(NVCCFLAGS) -Xcompiler -fopenmp $< -o $@
 
-# attention uses the OpenMP version (parallel multi-head attention on CPU threads,
-# runs concurrently in spirit with the GPU Linear). Built with -fopenmp.
-$(CUDA_OBJ_FOLDER)/attention.o : $(OMP_SRC_FOLDER)/attention.cpp
+# every CPU unit that has an OpenMP version comes from omp_src/ (-fopenmp):
+# attention, conv2d, datatypes (element-wise), vision_transformer (pos_embed)
+$(CUDA_OBJ_FOLDER)/attention.o \
+$(CUDA_OBJ_FOLDER)/conv2d.o \
+$(CUDA_OBJ_FOLDER)/datatypes.o \
+$(CUDA_OBJ_FOLDER)/vision_transformer.o \
+\
+: $(CUDA_OBJ_FOLDER)/%.o : $(OMP_SRC_FOLDER)/%.cpp
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $(OMPFLAGS) $< -o $@
 
-# the remaining CPU units stay plain serial C++ but live in cuda_obj/
-$(CUDA_OBJ_FOLDER)/datatypes.o \
+# the pure orchestrators stay serial (they only call the parallel/GPU leaf ops)
 $(CUDA_OBJ_FOLDER)/mlp.o \
-$(CUDA_OBJ_FOLDER)/conv2d.o \
 $(CUDA_OBJ_FOLDER)/block.o \
 $(CUDA_OBJ_FOLDER)/patch_embed.o \
-$(CUDA_OBJ_FOLDER)/vision_transformer.o \
 $(CUDA_OBJ_FOLDER)/utils.o \
 $(CUDA_OBJ_FOLDER)/main.o \
 \
@@ -305,19 +309,22 @@ cuda_prof : $(CUDA_BIN_FOLDER)/vit_cuda_prof.exe
 
 $(CUDA_PROF_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
 	@mkdir -p $(@D)
-	$(NVCC) -c $(NVCCFLAGS) $(CUDA_NVTX_FLAGS) $< -o $@
+	$(NVCC) -c $(NVCCFLAGS) $(CUDA_NVTX_FLAGS) -Xcompiler -fopenmp $< -o $@
 
-# attention: OpenMP version + NVTX
-$(CUDA_PROF_OBJ_FOLDER)/attention.o : $(OMP_SRC_FOLDER)/attention.cpp
+# OpenMP CPU units from omp_src/ (+ NVTX)
+$(CUDA_PROF_OBJ_FOLDER)/attention.o \
+$(CUDA_PROF_OBJ_FOLDER)/conv2d.o \
+$(CUDA_PROF_OBJ_FOLDER)/datatypes.o \
+$(CUDA_PROF_OBJ_FOLDER)/vision_transformer.o \
+\
+: $(CUDA_PROF_OBJ_FOLDER)/%.o : $(OMP_SRC_FOLDER)/%.cpp
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $(OMPFLAGS) -DUSE_NVTX -I$(CUDA_HOME)/include $< -o $@
 
-$(CUDA_PROF_OBJ_FOLDER)/datatypes.o \
+# serial orchestrators (+ NVTX)
 $(CUDA_PROF_OBJ_FOLDER)/mlp.o \
-$(CUDA_PROF_OBJ_FOLDER)/conv2d.o \
 $(CUDA_PROF_OBJ_FOLDER)/block.o \
 $(CUDA_PROF_OBJ_FOLDER)/patch_embed.o \
-$(CUDA_PROF_OBJ_FOLDER)/vision_transformer.o \
 $(CUDA_PROF_OBJ_FOLDER)/utils.o \
 $(CUDA_PROF_OBJ_FOLDER)/main.o \
 \
