@@ -1,0 +1,16 @@
+suggested?
+project/
+├── src/                  # Original Serial Code
+├── src_omp/              # OpenMP Code
+├── src_hybrid/           # New CUDA + MPI Code
+│   ├── main.cpp          # MPI initialization & orchestration
+│   ├── datatypes.cu      # GPU memory allocation/tensors
+│   ├── datatypes.cuh     
+│   ├── conv2d.cu         # CUDA kernels for Convolution
+│   ├── attention.cu      # CUDA kernels for Self-Attention
+│   ├── mlp.cu            # CUDA kernels for Linear layers
+│   ├── patch_embed.cu    
+│   ├── block.cpp         # Combines layers (mainly calls CUDA kernels)
+│   ├── vision_transformer.cpp # High-level network architecture
+│   └── utils.cpp
+└── Makefile              # Updated to use both mpicxx and nvcc
