@@ -37,3 +37,6 @@ __pycache__/
 *.egg-info/
 
 my_env
+
+*.out
+*.err
