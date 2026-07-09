@@ -7,6 +7,7 @@
 #include "../include/modules.h"
 #include "../include/block.h"
 #include "../include/patch_embed.h"
+#include "../include/vit_nvtx.h"
 
 #include <vector>
 #include <utility>
@@ -319,6 +320,7 @@ void VisionTransformer::from_ifstream(std::ifstream& is) {
 }
 
 void VisionTransformer::position_embed(const Tensor& x_in, Tensor& x_out) const {
+    VIT_NVTX_RANGE("pos_embed");
     Tensor y(x_in.get_B(), (x_in.get_N() + num_prefix_tokens), x_in.get_C() );
     vit_float val;
 
@@ -346,7 +348,7 @@ void VisionTransformer::position_embed(const Tensor& x_in, Tensor& x_out) const 
             }
         }
 
-        #pragma omp parallel for private(val) shared(y,has_class_token,cls_token,use_pos_embed,pos_embed,reg_token,x_in,num_prefix_tokens) schedule(static)
+        #pragma omp parallel for private(val) schedule(static)
         for (int i=0;i<y.get_B();++i) {
             if (has_class_token == true) {
                 for (int k=0;k<y.get_C();++k) {
@@ -387,7 +389,7 @@ void VisionTransformer::position_embed(const Tensor& x_in, Tensor& x_out) const 
             }
         }
 
-        #pragma omp parallel for private(val) shared(y,has_class_token,cls_token,use_pos_embed,pos_embed,reg_token,x_in,num_prefix_tokens) schedule(static)
+        #pragma omp parallel for private(val) schedule(static)
         for (int i=0;i<y.get_B();++i) {
             if (has_class_token == true) {
                 for (int k=0;k<y.get_C();++k) {
@@ -475,7 +477,10 @@ void VisionTransformer::timed_forward(const PictureBatch& pic, PredictionBatch& 
 
     auto start_time = std::chrono::high_resolution_clock::now();
     Tensor x;
-    patch_embed.forward(pic, x);
+    {
+        VIT_NVTX_RANGE("patch_embed");
+        patch_embed.forward(pic, x);
+    }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
     t.set(0, elapsed.count());

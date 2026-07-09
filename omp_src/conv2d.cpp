@@ -4,6 +4,7 @@
 #include "../include/conv2d.h"
 
 #include "../include/datatypes.h"
+#include "../include/vit_nvtx.h"
 
 #include <utility>
 #include <assert.h>
@@ -129,6 +130,7 @@ void Conv2d::from_ifstream(std::ifstream& is) {
 }
 
 void Conv2d::forward(const PictureBatch& x_in, PictureBatch& x_out) const {
+    VIT_NVTX_RANGE("conv2d");
     assert(x_in.get_C() == in_channels);
     assert(kernel.get_C() == in_channels);
     assert(kernel.get_B() == out_channels);
@@ -145,7 +147,7 @@ void Conv2d::forward(const PictureBatch& x_in, PictureBatch& x_out) const {
     PictureBatch y(x_in.get_B(), out_channels, out_h, out_w);
 
     vit_float val;
-    #pragma omp parallel for collapse(4) private(val) shared(y,out_channels,out_h,out_w,use_bias,bias,kernel,x_in,stride_h,stride_w) schedule(static)
+    #pragma omp parallel for collapse(4) private(val) schedule(static)
     for (int batch=0;batch<y.get_B();++batch) {
         for (int y_c=0;y_c<out_channels;++y_c) {
             for (int y_h=0;y_h<out_h;++y_h) {

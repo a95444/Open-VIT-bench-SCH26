@@ -4,6 +4,7 @@
 #include "../include/modules.h"
 #include "../include/block.h"
 #include "../include/patch_embed.h"
+#include "../include/vit_nvtx.h"
 
 #include <vector>
 #include <utility>
@@ -326,6 +327,7 @@ void VisionTransformer::from_ifstream(std::ifstream& is) {
 }
 
 void VisionTransformer::position_embed(const Tensor& x_in, Tensor& x_out) const {
+    VIT_NVTX_RANGE("pos_embed");
     Tensor y(x_in.get_B(), (x_in.get_N() + num_prefix_tokens), x_in.get_C() );
     vit_float val;
 
@@ -480,7 +482,10 @@ void VisionTransformer::timed_forward(const PictureBatch& pic, PredictionBatch& 
 
     auto start_time = std::chrono::high_resolution_clock::now();
     Tensor x;
-    patch_embed.forward(pic, x);
+    {
+        VIT_NVTX_RANGE("patch_embed");
+        patch_embed.forward(pic, x);
+    }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
     t.set(0, elapsed.count());
@@ -495,6 +500,7 @@ void VisionTransformer::timed_forward(const PictureBatch& pic, PredictionBatch& 
     t.set(1, elapsed.count());
 
     for (int i=0;i<depth;++i) {
+        std::cout << "Processing Transformer block " << i + 1 << " de " << depth << "..." << std::endl;
         vit_float attn_time, mlp_time;
         blocks.at(i).timed_forward(x, x, attn_time, mlp_time);
         t.set(2+(2*i), attn_time);

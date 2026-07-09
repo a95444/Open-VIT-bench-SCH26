@@ -8,6 +8,11 @@
 /test_bin
 /test_files
 
+/prof_obj
+/omp_prof_obj
+/prof_bin
+/reports
+
 /data
 /models
 /out
@@ -18,5 +23,13 @@
 
 /timm_train_vit/data
 .vscode
+
+# Python virtual environment
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.egg-info/
 
 my_env

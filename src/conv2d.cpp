@@ -1,6 +1,7 @@
 #include "../include/conv2d.h"
 
 #include "../include/datatypes.h"
+#include "../include/vit_nvtx.h"
 
 #include <utility>
 #include <assert.h>
@@ -126,6 +127,7 @@ void Conv2d::from_ifstream(std::ifstream& is) {
 }
 
 void Conv2d::forward(const PictureBatch& x_in, PictureBatch& x_out) const {
+    VIT_NVTX_RANGE("conv2d");
     assert(x_in.get_C() == in_channels);
     assert(kernel.get_C() == in_channels);
     assert(kernel.get_B() == out_channels);
