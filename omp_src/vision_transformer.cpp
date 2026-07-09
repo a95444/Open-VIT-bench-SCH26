@@ -348,7 +348,7 @@ void VisionTransformer::position_embed(const Tensor& x_in, Tensor& x_out) const 
             }
         }
 
-        #pragma omp parallel for private(val) shared(y,x_in) schedule(static)
+        #pragma omp parallel for private(val) schedule(static)
         for (int i=0;i<y.get_B();++i) {
             if (has_class_token == true) {
                 for (int k=0;k<y.get_C();++k) {
@@ -389,7 +389,7 @@ void VisionTransformer::position_embed(const Tensor& x_in, Tensor& x_out) const 
             }
         }
 
-        #pragma omp parallel for private(val) shared(y,x_in) schedule(static)
+        #pragma omp parallel for private(val) schedule(static)
         for (int i=0;i<y.get_B();++i) {
             if (has_class_token == true) {
                 for (int k=0;k<y.get_C();++k) {

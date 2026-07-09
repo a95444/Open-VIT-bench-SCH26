@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+
+#profile_nsys.sh
 # Profile the serial (src/) and OpenMP (omp_src/) ViT forward pass with
 # Nsight Systems, using the NVTX ranges compiled into the *_prof executables.
 #
