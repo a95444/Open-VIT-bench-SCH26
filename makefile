@@ -28,6 +28,14 @@ PROF_BIN_FOLDER := prof_bin
 PROF_OBJ_FOLDER := prof_obj
 OMP_PROF_OBJ_FOLDER := omp_prof_obj
 
+# --- CUDA build (hand-written kernels; starts with Linear) ------------------
+NVCC := nvcc
+CUDA_ARCH ?= sm_80                 # Leonardo Booster = A100; override for other GPUs
+NVCCFLAGS := -O3 -std=c++11 -arch=$(CUDA_ARCH)
+CUDA_BIN_FOLDER := cuda_bin
+CUDA_OBJ_FOLDER := cuda_obj
+CUDA_SRC_FOLDER := cuda_src
+
 
 
 all : vit
@@ -36,12 +44,14 @@ clean :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* \
 		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
+		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
 		   ./out_comparison/* ./logs/*
 
 clean_everything :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* ./test_files/* \
 		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
+		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
 		   ./data/* ./models/* ./out/* ./measures/* \
 		   ./out_comparison/* ./logs/*
 
@@ -223,3 +233,52 @@ $(PROF_OBJ_FOLDER)/utils.o \
 $(PROF_OBJ_FOLDER)/main.o
 	@mkdir -p $(@D)
 	$(CC) $(PROF_CFLAGS) $(OMPFLAGS) $^ -o $@ $(NVTX_LIB)
+
+
+
+# ===========================================================================
+# CUDA build (hand-written kernels; Linear ported so far)
+# ===========================================================================
+#   make cuda                     -> cuda_bin/vit.exe   (Linear runs on the GPU)
+#   make cuda CUDA_ARCH=sm_70     -> for a non-A100 GPU
+# Fully isolated in cuda_obj/ + cuda_bin/, so the CPU/OpenMP builds are untouched.
+# modules is compiled by nvcc (it holds the kernel); the other 9 units stay
+# plain C++ (g++) and are linked in by nvcc.
+.PHONY : cuda
+cuda : $(CUDA_BIN_FOLDER)/vit.exe
+
+# the CUDA translation unit (holds linear_kernel)
+$(CUDA_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
+	@mkdir -p $(@D)
+	$(NVCC) -c $(NVCCFLAGS) $< -o $@
+
+# the remaining units stay plain C++ but live in cuda_obj/ so nothing is shared
+$(CUDA_OBJ_FOLDER)/datatypes.o \
+$(CUDA_OBJ_FOLDER)/mlp.o \
+$(CUDA_OBJ_FOLDER)/conv2d.o \
+$(CUDA_OBJ_FOLDER)/attention.o \
+$(CUDA_OBJ_FOLDER)/block.o \
+$(CUDA_OBJ_FOLDER)/patch_embed.o \
+$(CUDA_OBJ_FOLDER)/vision_transformer.o \
+$(CUDA_OBJ_FOLDER)/utils.o \
+$(CUDA_OBJ_FOLDER)/main.o \
+\
+: $(CUDA_OBJ_FOLDER)/%.o : $(SRC_FOLDER)/%.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+# link with nvcc so it pulls in the CUDA runtime
+$(CUDA_BIN_FOLDER)/vit.exe : \
+\
+$(CUDA_OBJ_FOLDER)/modules.o \
+$(CUDA_OBJ_FOLDER)/datatypes.o \
+$(CUDA_OBJ_FOLDER)/mlp.o \
+$(CUDA_OBJ_FOLDER)/conv2d.o \
+$(CUDA_OBJ_FOLDER)/attention.o \
+$(CUDA_OBJ_FOLDER)/block.o \
+$(CUDA_OBJ_FOLDER)/patch_embed.o \
+$(CUDA_OBJ_FOLDER)/vision_transformer.o \
+$(CUDA_OBJ_FOLDER)/utils.o \
+$(CUDA_OBJ_FOLDER)/main.o
+	@mkdir -p $(@D)
+	$(NVCC) $(NVCCFLAGS) $^ -o $@

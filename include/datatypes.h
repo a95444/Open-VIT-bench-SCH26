@@ -31,6 +31,7 @@ public:
 
     vit_size get_DIM() const;
     vit_float at(vit_size i) const;
+    const vit_float* get_data() const; // raw contiguous buffer (for CUDA uploads)
 
     void set(vit_size i, vit_float val);
 
@@ -63,6 +64,7 @@ public:
     vit_size get_ROWS() const;
     vit_size get_COLS() const;
     vit_float at(vit_size i, vit_size j) const;
+    const vit_float* get_data() const; // raw contiguous buffer (for CUDA uploads)
 
     void set(vit_size i, vit_size j, vit_float val);
 
@@ -96,6 +98,7 @@ public:
     vit_size get_N() const;
     vit_size get_C() const;
     vit_float at(vit_size b, vit_size n, vit_size c) const;
+    const vit_float* get_data() const; // raw contiguous buffer (for CUDA uploads)
 
     void set(vit_size b, vit_size n, vit_size c, vit_float val);
     void copy_tensor(const Tensor& t);

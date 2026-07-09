@@ -13,6 +13,9 @@
 /prof_bin
 /reports
 
+/cuda_obj
+/cuda_bin
+
 /data
 /models
 /out
