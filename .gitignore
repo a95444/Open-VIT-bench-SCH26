@@ -8,6 +8,11 @@
 /test_bin
 /test_files
 
+/prof_obj
+/omp_prof_obj
+/prof_bin
+/reports
+
 /data
 /models
 /out
