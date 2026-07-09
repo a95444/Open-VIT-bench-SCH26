@@ -18,3 +18,11 @@
 
 /timm_train_vit/data
 .vscode
+
+# Python virtual environment
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.egg-info/
