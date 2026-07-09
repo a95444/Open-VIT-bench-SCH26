@@ -1,0 +1,27 @@
+# Python dependencies for the timm_train_vit/ and scripts/ parts of Open-VIT-bench.
+# The C++ and OpenMP benchmark (src/, omp_src/, include/) only needs a C++11 compiler
+# with OpenMP support (system g++ already satisfies this) - no Python packages required there.
+#
+# No requirements.txt / environment.yml / pyproject.toml existed in the repo; these were
+# derived by scanning every import in scripts/, timm_train_vit/*.py and the vendored
+# timm_train_vit/timm/ package. Versions are minimums known to work with the vendored
+# timm (1.0.8.dev0) API surface actually used (timm.create_model, VisionTransformer,
+# Attention, LayerScale, Block, PatchEmbed, Mlp) - no lockfile existed to pin exact versions.
+
+torch>=2.0
+torchvision>=0.15
+numpy>=1.21
+tqdm>=4.60
+Pillow>=9.0
+typing_extensions>=4.0
+
+# --- Optional, NOT required for this project's usage ---
+# The vendored timm package can optionally use these (all guarded by try/except ImportError
+# in timm's source), but none of them are exercised by vit.py, train.py, create_model.py,
+# convert_pt_cvit.py or cvit_utils.py, since every model is created with pretrained=False
+# and weights are loaded/saved via plain torch.save/torch.load:
+#   huggingface_hub, safetensors   -> only used for downloading/pushing pretrained hub weights
+#   pyyaml                          -> only used by timm's webdataset data reader
+#   scipy                           -> only used by a couple of optional timm layers
+#   wandb, onnx, onnxruntime, apex, bitsandbytes, tensorflow, tensorflow_datasets,
+#   webdataset, datasets, inplace_abn, functorch -> unused optional timm integrations
