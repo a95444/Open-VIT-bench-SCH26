@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from .format import Format, nchw_to
 from .helpers import to_2tuple
 from .trace_utils import _assert
+from timm.nvtx_utils import nvtx_range
 
 _logger = logging.getLogger(__name__)
 
@@ -82,31 +83,33 @@ class PatchEmbed(nn.Module):
             return img_size[0] // self.patch_size[0], img_size[1] // self.patch_size[1]
 
     def forward(self, x):
-        B, C, H, W = x.shape
-        if self.img_size is not None:
-            if self.strict_img_size:
-                _assert(H == self.img_size[0], f"Input height ({H}) doesn't match model ({self.img_size[0]}).")
-                _assert(W == self.img_size[1], f"Input width ({W}) doesn't match model ({self.img_size[1]}).")
-            elif not self.dynamic_img_pad:
-                _assert(
-                    H % self.patch_size[0] == 0,
-                    f"Input height ({H}) should be divisible by patch size ({self.patch_size[0]})."
-                )
-                _assert(
-                    W % self.patch_size[1] == 0,
-                    f"Input width ({W}) should be divisible by patch size ({self.patch_size[1]})."
-                )
-        if self.dynamic_img_pad:
-            pad_h = (self.patch_size[0] - H % self.patch_size[0]) % self.patch_size[0]
-            pad_w = (self.patch_size[1] - W % self.patch_size[1]) % self.patch_size[1]
-            x = F.pad(x, (0, pad_w, 0, pad_h))
-        x = self.proj(x)
-        if self.flatten:
-            x = x.flatten(2).transpose(1, 2)  # NCHW -> NLC
-        elif self.output_fmt != Format.NCHW:
-            x = nchw_to(x, self.output_fmt)
-        x = self.norm(x)
-        return x
+        with nvtx_range("patch_embed"):
+            B, C, H, W = x.shape
+            if self.img_size is not None:
+                if self.strict_img_size:
+                    _assert(H == self.img_size[0], f"Input height ({H}) doesn't match model ({self.img_size[0]}).")
+                    _assert(W == self.img_size[1], f"Input width ({W}) doesn't match model ({self.img_size[1]}).")
+                elif not self.dynamic_img_pad:
+                    _assert(
+                        H % self.patch_size[0] == 0,
+                        f"Input height ({H}) should be divisible by patch size ({self.patch_size[0]})."
+                    )
+                    _assert(
+                        W % self.patch_size[1] == 0,
+                        f"Input width ({W}) should be divisible by patch size ({self.patch_size[1]})."
+                    )
+            if self.dynamic_img_pad:
+                pad_h = (self.patch_size[0] - H % self.patch_size[0]) % self.patch_size[0]
+                pad_w = (self.patch_size[1] - W % self.patch_size[1]) % self.patch_size[1]
+                x = F.pad(x, (0, pad_w, 0, pad_h))
+            with nvtx_range("conv2d"):
+                x = self.proj(x)
+            if self.flatten:
+                x = x.flatten(2).transpose(1, 2)  # NCHW -> NLC
+            elif self.output_fmt != Format.NCHW:
+                x = nchw_to(x, self.output_fmt)
+            x = self.norm(x)
+            return x
 
 
 class PatchEmbedWithSize(PatchEmbed):

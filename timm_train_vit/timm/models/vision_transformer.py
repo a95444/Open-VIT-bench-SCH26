@@ -50,6 +50,7 @@ from ._manipulate import named_apply, checkpoint_seq, adapt_input_conv
 from ._registry import generate_default_cfgs, register_model, register_model_deprecations
 
 import time
+from timm.nvtx_utils import nvtx_range
 
 __all__ = ['VisionTransformer']  # model_registry will add each entrypoint fn to this
 
@@ -86,24 +87,27 @@ class Attention(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        with nvtx_range("linear"):
+            qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
         q, k = self.q_norm(q), self.k_norm(k)
 
-        if self.fused_attn:
-            x = F.scaled_dot_product_attention(
-                q, k, v,
-                dropout_p=self.attn_drop.p if self.training else 0.,
-            )
-        else:
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)
-            attn = attn.softmax(dim=-1)
-            attn = self.attn_drop(attn)
-            x = attn @ v
+        with nvtx_range("attention"):
+            if self.fused_attn:
+                x = F.scaled_dot_product_attention(
+                    q, k, v,
+                    dropout_p=self.attn_drop.p if self.training else 0.,
+                )
+            else:
+                q = q * self.scale
+                attn = q @ k.transpose(-2, -1)
+                attn = attn.softmax(dim=-1)
+                attn = self.attn_drop(attn)
+                x = attn @ v
 
         x = x.transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
+        with nvtx_range("linear"):
+            x = self.proj(x)
         x = self.proj_drop(x)
         return x
 
@@ -170,12 +174,18 @@ class Block(nn.Module):
     
     def timed_forward(self, x: torch.Tensor) :
         start_time = time.perf_counter()
-        x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
+        with nvtx_range("blk_attn"):
+            with nvtx_range("layernorm"):
+                xn = self.norm1(x)
+            x = x + self.drop_path1(self.ls1(self.attn(xn)))
         end_time = time.perf_counter()
         attn_time = end_time - start_time
 
         start_time = time.perf_counter()
-        x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+        with nvtx_range("blk_mlp"):
+            with nvtx_range("layernorm"):
+                xn = self.norm2(x)
+            x = x + self.drop_path2(self.ls2(self.mlp(xn)))
         end_time = time.perf_counter()
         mlp_time = end_time - start_time
         return x, attn_time, mlp_time
@@ -649,40 +659,41 @@ class VisionTransformer(nn.Module):
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
     def _pos_embed(self, x: torch.Tensor) -> torch.Tensor:
-        if self.pos_embed is None:
-            return x.view(x.shape[0], -1, x.shape[-1])
+        with nvtx_range("pos_embed"):
+            if self.pos_embed is None:
+                return x.view(x.shape[0], -1, x.shape[-1])
 
-        if self.dynamic_img_size:
-            B, H, W, C = x.shape
-            pos_embed = resample_abs_pos_embed(
-                self.pos_embed,
-                (H, W),
-                num_prefix_tokens=0 if self.no_embed_class else self.num_prefix_tokens,
-            )
-            x = x.view(B, -1, C)
-        else:
-            pos_embed = self.pos_embed
+            if self.dynamic_img_size:
+                B, H, W, C = x.shape
+                pos_embed = resample_abs_pos_embed(
+                    self.pos_embed,
+                    (H, W),
+                    num_prefix_tokens=0 if self.no_embed_class else self.num_prefix_tokens,
+                )
+                x = x.view(B, -1, C)
+            else:
+                pos_embed = self.pos_embed
 
-        to_cat = []
-        if self.cls_token is not None:
-            to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
-        if self.reg_token is not None:
-            to_cat.append(self.reg_token.expand(x.shape[0], -1, -1))
+            to_cat = []
+            if self.cls_token is not None:
+                to_cat.append(self.cls_token.expand(x.shape[0], -1, -1))
+            if self.reg_token is not None:
+                to_cat.append(self.reg_token.expand(x.shape[0], -1, -1))
 
-        if self.no_embed_class:
-            # deit-3, updated JAX (big vision)
-            # position embedding does not overlap with class token, add then concat
-            x = x + pos_embed
-            if to_cat:
-                x = torch.cat(to_cat + [x], dim=1)
-        else:
-            # original timm, JAX, and deit vit impl
-            # pos_embed has entry for class token, concat then add
-            if to_cat:
-                x = torch.cat(to_cat + [x], dim=1)
-            x = x + pos_embed
+            if self.no_embed_class:
+                # deit-3, updated JAX (big vision)
+                # position embedding does not overlap with class token, add then concat
+                x = x + pos_embed
+                if to_cat:
+                    x = torch.cat(to_cat + [x], dim=1)
+            else:
+                # original timm, JAX, and deit vit impl
+                # pos_embed has entry for class token, concat then add
+                if to_cat:
+                    x = torch.cat(to_cat + [x], dim=1)
+                x = x + pos_embed
 
-        return self.pos_drop(x)
+            return self.pos_drop(x)
 
     def forward_intermediates(
             self,
@@ -798,12 +809,13 @@ class VisionTransformer(nn.Module):
         return x
 
     def pool(self, x: torch.Tensor, pool_type: Optional[str] = None) -> torch.Tensor:
-        if self.attn_pool is not None:
-            x = self.attn_pool(x)
+        with nvtx_range("pool"):
+            if self.attn_pool is not None:
+                x = self.attn_pool(x)
+                return x
+            pool_type = self.global_pool if pool_type is None else pool_type
+            x = global_pool_nlc(x, pool_type=pool_type, num_prefix_tokens=self.num_prefix_tokens)
             return x
-        pool_type = self.global_pool if pool_type is None else pool_type
-        x = global_pool_nlc(x, pool_type=pool_type, num_prefix_tokens=self.num_prefix_tokens)
-        return x
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
         x = self.pool(x)
@@ -837,7 +849,8 @@ class VisionTransformer(nn.Module):
             times.append(mlp_time)
 
         start_time = time.perf_counter()
-        x = self.norm(x)
+        with nvtx_range("layernorm"):
+            x = self.norm(x)
         x = self.pool(x)
         x = self.fc_norm(x)
         end_time = time.perf_counter()
@@ -845,7 +858,8 @@ class VisionTransformer(nn.Module):
 
         start_time = time.perf_counter()
         x = self.head_drop(x)
-        x = self.head(x)
+        with nvtx_range("linear"):
+            x = self.head(x)
         end_time = time.perf_counter()
         times.append(end_time - start_time)
 

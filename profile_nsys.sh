@@ -68,6 +68,13 @@ OMP_NUM_THREADS="$OMP_THREADS" OMP_PROC_BIND=close OMP_PLACES=cores \
 nsys profile $NSYS_ARGS -o "reports/omp_b${B}" \
     ./prof_bin/vit_omp_prof.exe "$MODEL" "$PIC" "reports/omp_prd_b${B}.cprd" "$MEAS"
 
+# Python reference (timm). Uses the .pt model (state dict), NVTX ranges gated by
+# USE_NVTX=1 (see timm_train_vit/timm/nvtx_utils.py). CPU-only, like the runs above.
+echo
+echo "=== Python capture -> reports/py_b${B} ==="
+USE_NVTX=1 nsys profile $NSYS_ARGS -o "reports/py_b${B}" \
+    python3 timm_train_vit/vit.py "models/vit_1.pt" "$PIC" "reports/py_prd_b${B}.cprd" "$MEAS"
+
 # --- 5. NVTX region time summary (sorted table per report) -----------------
 echo
 echo "=== NVTX region summary: SERIAL (reports/cpp_b${B}) ==="
@@ -77,5 +84,9 @@ echo "=== NVTX region summary: OPENMP (reports/omp_b${B}) ==="
 nsys stats --report nvtx_pushpop_sum --format table "reports/omp_b${B}.nsys-rep" || true
 
 echo
-echo "Done. Open reports/cpp_b${B}.nsys-rep and reports/omp_b${B}.nsys-rep in the Nsight Systems GUI."
+echo "=== NVTX region summary: PYTHON (reports/py_b${B}) ==="
+nsys stats --report nvtx_pushpop_sum --format table "reports/py_b${B}.nsys-rep" || true
+
+echo
+echo "Done. Open reports/cpp_b${B}.nsys-rep, reports/omp_b${B}.nsys-rep and reports/py_b${B}.nsys-rep in the Nsight Systems GUI."
 echo "The widest NVTX ranges (expect 'linear' and 'attention') are the first CUDA targets."

@@ -8,6 +8,7 @@ from torch import nn as nn
 
 from .grn import GlobalResponseNorm
 from .helpers import to_2tuple
+from timm.nvtx_utils import nvtx_range
 
 
 class Mlp(nn.Module):
@@ -39,11 +40,14 @@ class Mlp(nn.Module):
         self.drop2 = nn.Dropout(drop_probs[1])
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
+        with nvtx_range("linear"):
+            x = self.fc1(x)
+        with nvtx_range("gelu"):
+            x = self.act(x)
         x = self.drop1(x)
         x = self.norm(x)
-        x = self.fc2(x)
+        with nvtx_range("linear"):
+            x = self.fc2(x)
         x = self.drop2(x)
         return x
 
