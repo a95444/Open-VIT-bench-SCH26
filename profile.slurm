@@ -12,7 +12,7 @@
 #SBATCH --job-name=vit-nsys
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
-#SBATCH --account=<YOUR_ACCOUNT>          # <-- set your training/project account
+#SBATCH --account=tra26_sumsch_0         # <-- set your training/project account
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=boost_qos_dbg
 #SBATCH --time=00:30:00
@@ -26,7 +26,7 @@
 module load cuda
 # python env only needed the FIRST time, to generate models/vit_1.cvit and the
 # input .cpic (requires torch + timm). Comment out once those files exist.
-source /leonardo_work/tra26_sumsch_0/pyenv_acc/bin/activate
+source /leonardo/home/usertrain/a08tra06/challenge/Open-VIT-bench-SCH26/venv/bin/activate
 
 # CUDA_HOME is set by `module load cuda` (provides nvtx3 headers + nsys).
 export OMP_THREADS="${SLURM_CPUS_PER_TASK:-8}"   # threads for the OpenMP capture
