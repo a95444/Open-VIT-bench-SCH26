@@ -20,7 +20,6 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32                # Booster node = 32 physical cores
 #SBATCH --gres=gpu:1
-#SBATCH --exclusive
 
 ### environment ###
 module load cuda
