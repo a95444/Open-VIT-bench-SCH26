@@ -12,7 +12,7 @@
 #SBATCH --job-name=vit-cuda
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
-#SBATCH --account=<YOUR_ACCOUNT>          # <-- set your account (check: saldo -b)
+#SBATCH --account=tra26_sumsch_0          # <-- set your account (check: saldo -b)
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=boost_qos_dbg
 #SBATCH --time=00:20:00
