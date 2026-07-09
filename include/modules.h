@@ -15,6 +15,12 @@ private:
 
     Matrix A;
     RowVector b; // subject to use_bias
+
+    // Device-resident copies of the weights, uploaded once (CUDA build only).
+    // Default-initialised to nullptr so CPU/OpenMP builds see them safely unused.
+    // `mutable` because operator() is const and uploads lazily on first use.
+    mutable vit_float* d_A = nullptr;
+    mutable vit_float* d_b = nullptr;
 public:
     Linear(vit_size _in_features, vit_size _out_features, vit_bool _use_bias=true);
     Linear(const Linear& lin) = delete;

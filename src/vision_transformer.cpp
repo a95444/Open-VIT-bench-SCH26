@@ -500,7 +500,6 @@ void VisionTransformer::timed_forward(const PictureBatch& pic, PredictionBatch& 
     t.set(1, elapsed.count());
 
     for (int i=0;i<depth;++i) {
-        std::cout << "Processing Transformer block " << i + 1 << " de " << depth << "..." << std::endl;
         vit_float attn_time, mlp_time;
         blocks.at(i).timed_forward(x, x, attn_time, mlp_time);
         t.set(2+(2*i), attn_time);

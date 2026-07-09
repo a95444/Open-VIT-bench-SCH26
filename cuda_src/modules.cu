@@ -23,9 +23,15 @@ Linear::Linear(Linear&& lin) : A(std::move(lin.A)), b(std::move(lin.b)) {
     in_features = lin.in_features;
     out_features = lin.out_features;
     use_bias = lin.use_bias;
+
+    d_A = lin.d_A;  d_b = lin.d_b;      // take ownership of the resident weights
+    lin.d_A = nullptr;  lin.d_b = nullptr;
 }
 
-Linear::~Linear() {}
+Linear::~Linear() {
+    if (d_A) cudaFree(d_A);
+    if (d_b) cudaFree(d_b);
+}
 
 Linear& Linear::operator= (Linear&& lin) {
     in_features = lin.in_features;
@@ -35,7 +41,31 @@ Linear& Linear::operator= (Linear&& lin) {
     A = std::move(lin.A);
     b = std::move(lin.b);
 
+    if (d_A) cudaFree(d_A);             // release our own before stealing lin's
+    if (d_b) cudaFree(d_b);
+    d_A = lin.d_A;  d_b = lin.d_b;
+    lin.d_A = nullptr;  lin.d_b = nullptr;
+
     return *this;
+}
+
+// Upload a Linear's weights to the device once (frees any previous copy).
+// Called at load time (from_ifstream) and as a lazy fallback in operator().
+static void upload_linear_weights(
+    const Matrix& A, const RowVector& b, vit_bool use_bias,
+    vit_float*& d_A, vit_float*& d_b
+) {
+    if (d_A) { cudaFree(d_A); d_A = nullptr; }
+    if (d_b) { cudaFree(d_b); d_b = nullptr; }
+
+    const long A_sz = (long)A.get_ROWS() * A.get_COLS();
+    CUDA_CHECK(cudaMalloc(&d_A, A_sz * sizeof(vit_float)));
+    CUDA_CHECK(cudaMemcpy(d_A, A.get_data(), A_sz * sizeof(vit_float), cudaMemcpyHostToDevice));
+    if (use_bias) {
+        const long b_sz = (long)b.get_DIM();
+        CUDA_CHECK(cudaMalloc(&d_b, b_sz * sizeof(vit_float)));
+        CUDA_CHECK(cudaMemcpy(d_b, b.get_data(), b_sz * sizeof(vit_float), cudaMemcpyHostToDevice));
+    }
 }
 
 // ===========================================================================
@@ -83,48 +113,52 @@ void Linear::operator()(const Tensor& x_in, Tensor& x_out) const {
         assert(b.get_DIM() == out_features);
     }
 
+    // weights are resident on the device (uploaded once at load, see from_ifstream);
+    // lazily upload the first time if this Linear wasn't loaded from a file.
+    if (d_A == nullptr) {
+        upload_linear_weights(A, b, use_bias, d_A, d_b);
+    }
+
     const int  B     = x_in.get_B();
     const int  N     = x_in.get_N();
     const int  in_f  = in_features;
     const int  out_f = out_features;
     const long x_sz  = (long)B * N * in_f;
-    const long A_sz  = (long)out_f * in_f;
     const long y_sz  = (long)B * N * out_f;
 
-    // 1. allocate device buffers
-    vit_float *d_x = nullptr, *d_A = nullptr, *d_b = nullptr, *d_y = nullptr;
+    // only the activations move per call now: x up, y down (weights stay resident)
+    vit_float *d_x = nullptr, *d_y = nullptr;
     CUDA_CHECK(cudaMalloc(&d_x, x_sz * sizeof(vit_float)));
-    CUDA_CHECK(cudaMalloc(&d_A, A_sz * sizeof(vit_float)));
     CUDA_CHECK(cudaMalloc(&d_y, y_sz * sizeof(vit_float)));
-
-    // 2. upload input + weights (already contiguous -> direct copy, no repack)
     CUDA_CHECK(cudaMemcpy(d_x, x_in.get_data(), x_sz * sizeof(vit_float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_A, A.get_data(),    A_sz * sizeof(vit_float), cudaMemcpyHostToDevice));
-    if (use_bias) {
-        CUDA_CHECK(cudaMalloc(&d_b, out_f * sizeof(vit_float)));
-        CUDA_CHECK(cudaMemcpy(d_b, b.get_data(), out_f * sizeof(vit_float), cudaMemcpyHostToDevice));
-    }
 
-    // 3. launch: one thread per output element
+    // launch: one thread per output element
     const int  threads = 256;
     const long blocks  = (y_sz + threads - 1) / threads;
     linear_kernel<<<blocks, threads>>>(d_x, d_A, d_b, d_y, N, in_f, out_f, y_sz, use_bias ? 1 : 0);
     CUDA_CHECK(cudaGetLastError());        // catch launch errors
     CUDA_CHECK(cudaDeviceSynchronize());   // wait + catch runtime errors
 
-    // 4. download the result into a Tensor (constructor copies the host buffer)
+    // download the result into a Tensor (constructor copies the host buffer)
     vit_float* h_y = new vit_float[y_sz];
     CUDA_CHECK(cudaMemcpy(h_y, d_y, y_sz * sizeof(vit_float), cudaMemcpyDeviceToHost));
     Tensor y(h_y, (vit_size)y_sz, B, N, out_f);
     delete [] h_y;
 
-    cudaFree(d_x); cudaFree(d_A); cudaFree(d_y);
-    if (d_b) cudaFree(d_b);
+    cudaFree(d_x);
+    cudaFree(d_y);
 
     // safe even when &x_in == &x_out (proj/fc2 call it aliased): x was already
     // uploaded before we touch x_out.
     x_out = std::move(y);
 }
+
+
+
+
+
+
+
 
 vit_size Linear::get_in_features() const {
     return in_features;
@@ -170,6 +204,10 @@ void Linear::from_ifstream(std::ifstream& is) {
     if (use_bias == true) {
         b.from_ifstream(is);
     }
+
+    // upload weights to the device now (load time) so the timed forward only
+    // moves activations, not the ~model-sized weights.
+    upload_linear_weights(A, b, use_bias, d_A, d_b);
 }
 
 

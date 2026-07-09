@@ -35,6 +35,9 @@ NVCCFLAGS := -O3 -std=c++11 -arch=$(CUDA_ARCH)
 CUDA_BIN_FOLDER := cuda_bin
 CUDA_OBJ_FOLDER := cuda_obj
 CUDA_SRC_FOLDER := cuda_src
+CUDA_PROF_OBJ_FOLDER := cuda_prof_obj
+# NVTX-instrumented CUDA flags (Nsight timeline shows the CPU stages too)
+CUDA_NVTX_FLAGS := -g -DUSE_NVTX -I$(CUDA_HOME)/include
 
 
 
@@ -44,14 +47,14 @@ clean :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* \
 		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
-		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
+		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_PROF_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
 		   ./out_comparison/* ./logs/*
 
 clean_everything :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* ./test_files/* \
 		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
-		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
+		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_PROF_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
 		   ./data/* ./models/* ./out/* ./measures/* \
 		   ./out_comparison/* ./logs/*
 
@@ -282,3 +285,48 @@ $(CUDA_OBJ_FOLDER)/utils.o \
 $(CUDA_OBJ_FOLDER)/main.o
 	@mkdir -p $(@D)
 	$(NVCC) $(NVCCFLAGS) $^ -o $@
+
+
+
+# ===========================================================================
+# CUDA profiling build (same as `cuda` + NVTX ranges, for Nsight Systems)
+# ===========================================================================
+#   make cuda_prof   -> cuda_bin/vit_cuda_prof.exe
+# NVTX ranges (linear, layernorm, gelu, attention, blk_attn, blk_mlp, ...) are
+# compiled in via -DUSE_NVTX so they appear on the timeline next to the CUDA
+# kernels/memcpys. Isolated in cuda_prof_obj/ so it never clobbers `make cuda`.
+.PHONY : cuda_prof
+cuda_prof : $(CUDA_BIN_FOLDER)/vit_cuda_prof.exe
+
+$(CUDA_PROF_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
+	@mkdir -p $(@D)
+	$(NVCC) -c $(NVCCFLAGS) $(CUDA_NVTX_FLAGS) $< -o $@
+
+$(CUDA_PROF_OBJ_FOLDER)/datatypes.o \
+$(CUDA_PROF_OBJ_FOLDER)/mlp.o \
+$(CUDA_PROF_OBJ_FOLDER)/conv2d.o \
+$(CUDA_PROF_OBJ_FOLDER)/attention.o \
+$(CUDA_PROF_OBJ_FOLDER)/block.o \
+$(CUDA_PROF_OBJ_FOLDER)/patch_embed.o \
+$(CUDA_PROF_OBJ_FOLDER)/vision_transformer.o \
+$(CUDA_PROF_OBJ_FOLDER)/utils.o \
+$(CUDA_PROF_OBJ_FOLDER)/main.o \
+\
+: $(CUDA_PROF_OBJ_FOLDER)/%.o : $(SRC_FOLDER)/%.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) -DUSE_NVTX -I$(CUDA_HOME)/include $< -o $@
+
+$(CUDA_BIN_FOLDER)/vit_cuda_prof.exe : \
+\
+$(CUDA_PROF_OBJ_FOLDER)/modules.o \
+$(CUDA_PROF_OBJ_FOLDER)/datatypes.o \
+$(CUDA_PROF_OBJ_FOLDER)/mlp.o \
+$(CUDA_PROF_OBJ_FOLDER)/conv2d.o \
+$(CUDA_PROF_OBJ_FOLDER)/attention.o \
+$(CUDA_PROF_OBJ_FOLDER)/block.o \
+$(CUDA_PROF_OBJ_FOLDER)/patch_embed.o \
+$(CUDA_PROF_OBJ_FOLDER)/vision_transformer.o \
+$(CUDA_PROF_OBJ_FOLDER)/utils.o \
+$(CUDA_PROF_OBJ_FOLDER)/main.o
+	@mkdir -p $(@D)
+	$(NVCC) $(NVCCFLAGS) $^ -o $@ -ldl
