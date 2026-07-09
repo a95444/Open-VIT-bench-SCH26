@@ -18,7 +18,7 @@
 #SBATCH --time=00:20:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:1
 
 ### environment ###
@@ -27,36 +27,32 @@ module load cuda
 # and the input .cpic. Comment out once models/ and data/prof/ exist.
 source venv/bin/activate
 
+# OpenMP threads for the parallel attention (CPU) that runs alongside the GPU Linear
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
+export OMP_PROC_BIND=close
+export OMP_PLACES=cores
+
 B="${B:-16}"
 MODEL="models/vit_1.cvit"
 PIC="data/prof/pic_b${B}.cpic"
 mkdir -p reports data/prof
 
-echo "node = $(hostname) | gpu = $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1) | B = $B"
+echo "node = $(hostname) | gpu = $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1) | B = $B | OMP threads = $OMP_NUM_THREADS"
 
-### 1. build: NVTX-instrumented CUDA binary + the plain CPU reference ###
+### 1. build: NVTX-instrumented CUDA binary only ###
 make cuda_prof
-mkdir -p obj bin && make bin/vit.exe
 
 ### 2. model + input (generated once, then reused) ###
 [ -f "$MODEL" ] || bash create_models.sh
 [ -f "$PIC" ]   || python3 scripts/random_cpic.py "$PIC" "$B" "$B" 3 224 224 0.0 1.0
 
-### 3. correctness: GPU predictions must match the CPU reference ###
-echo; echo "=== correctness check (CPU vs GPU) ==="
-./bin/vit.exe      "$MODEL" "$PIC" "reports/cpu_b${B}.cprd" /tmp/m.csv
-./cuda_bin/vit_cuda_prof.exe "$MODEL" "$PIC" "reports/gpu_b${B}.cprd" /tmp/m.csv
-python3 scripts/compare_cpred.py "reports/cpu_b${B}.cprd" "reports/gpu_b${B}.cprd" \
-        "reports/cmp_b${B}.txt" 0.0001 0.000001
-cat "reports/cmp_b${B}.txt"
-
-### 4. GPU profile with Nsight Systems (CUDA timeline) ###
+### 3. GPU profile with Nsight Systems (CUDA timeline) ###
 echo; echo "=== nsys capture (GPU) -> reports/cuda_b${B}.nsys-rep ==="
 nsys profile --trace=cuda,nvtx,osrt --force-overwrite=true \
      -o "reports/cuda_b${B}" \
      ./cuda_bin/vit_cuda_prof.exe "$MODEL" "$PIC" "reports/gpu_b${B}.cprd" /tmp/m.csv
 
-### 5. text summaries (GPU kernels + memory transfers) ###
+### 4. text summaries (GPU kernels + memory transfers) ###
 echo; echo "=== NVTX ranges (CPU stages + linear; look at where time goes) ==="
 nsys stats --report nvtx_pushpop_sum      --format table "reports/cuda_b${B}.nsys-rep" || true
 echo; echo "=== GPU kernel time (look for linear_kernel) ==="

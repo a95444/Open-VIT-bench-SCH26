@@ -255,11 +255,16 @@ $(CUDA_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
 	@mkdir -p $(@D)
 	$(NVCC) -c $(NVCCFLAGS) $< -o $@
 
-# the remaining units stay plain C++ but live in cuda_obj/ so nothing is shared
+# attention uses the OpenMP version (parallel multi-head attention on CPU threads,
+# runs concurrently in spirit with the GPU Linear). Built with -fopenmp.
+$(CUDA_OBJ_FOLDER)/attention.o : $(OMP_SRC_FOLDER)/attention.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) $(OMPFLAGS) $< -o $@
+
+# the remaining CPU units stay plain serial C++ but live in cuda_obj/
 $(CUDA_OBJ_FOLDER)/datatypes.o \
 $(CUDA_OBJ_FOLDER)/mlp.o \
 $(CUDA_OBJ_FOLDER)/conv2d.o \
-$(CUDA_OBJ_FOLDER)/attention.o \
 $(CUDA_OBJ_FOLDER)/block.o \
 $(CUDA_OBJ_FOLDER)/patch_embed.o \
 $(CUDA_OBJ_FOLDER)/vision_transformer.o \
@@ -270,7 +275,7 @@ $(CUDA_OBJ_FOLDER)/main.o \
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $< -o $@
 
-# link with nvcc so it pulls in the CUDA runtime
+# link with nvcc (CUDA runtime) + the OpenMP runtime (for the parallel attention)
 $(CUDA_BIN_FOLDER)/vit.exe : \
 \
 $(CUDA_OBJ_FOLDER)/modules.o \
@@ -284,7 +289,7 @@ $(CUDA_OBJ_FOLDER)/vision_transformer.o \
 $(CUDA_OBJ_FOLDER)/utils.o \
 $(CUDA_OBJ_FOLDER)/main.o
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $^ -o $@
+	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp $^ -o $@
 
 
 
@@ -302,10 +307,14 @@ $(CUDA_PROF_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
 	@mkdir -p $(@D)
 	$(NVCC) -c $(NVCCFLAGS) $(CUDA_NVTX_FLAGS) $< -o $@
 
+# attention: OpenMP version + NVTX
+$(CUDA_PROF_OBJ_FOLDER)/attention.o : $(OMP_SRC_FOLDER)/attention.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) $(OMPFLAGS) -DUSE_NVTX -I$(CUDA_HOME)/include $< -o $@
+
 $(CUDA_PROF_OBJ_FOLDER)/datatypes.o \
 $(CUDA_PROF_OBJ_FOLDER)/mlp.o \
 $(CUDA_PROF_OBJ_FOLDER)/conv2d.o \
-$(CUDA_PROF_OBJ_FOLDER)/attention.o \
 $(CUDA_PROF_OBJ_FOLDER)/block.o \
 $(CUDA_PROF_OBJ_FOLDER)/patch_embed.o \
 $(CUDA_PROF_OBJ_FOLDER)/vision_transformer.o \
@@ -329,4 +338,4 @@ $(CUDA_PROF_OBJ_FOLDER)/vision_transformer.o \
 $(CUDA_PROF_OBJ_FOLDER)/utils.o \
 $(CUDA_PROF_OBJ_FOLDER)/main.o
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $^ -o $@ -ldl
+	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp $^ -o $@ -ldl
