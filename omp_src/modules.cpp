@@ -4,6 +4,7 @@
 #include "../include/modules.h"
 
 #include "../include/datatypes.h"
+#include "../include/vit_nvtx.h"
 
 #include <utility>
 #include <assert.h>
@@ -39,6 +40,7 @@ Linear& Linear::operator= (Linear&& lin) {
 }
 
 void Linear::operator()(const Tensor& x_in, Tensor& x_out) const {
+    VIT_NVTX_RANGE("linear");
     assert(A.get_ROWS() == out_features);
     assert(A.get_COLS() == in_features);
     assert(x_in.get_C() == in_features);
@@ -151,6 +153,7 @@ void LayerNorm::operator()(Tensor& x) const {
 }
 
 void LayerNorm::operator()(Tensor& x, vit_size num_heads, vit_size head_dim) const {
+    VIT_NVTX_RANGE("layernorm");
     assert(x.get_C() == head_dim*num_heads);
     assert(g.get_DIM() == head_dim);
     if (use_bias == true) {
@@ -317,6 +320,7 @@ Activation& Activation::operator= (const Activation& a) {
 }
 
 void Activation::operator()(Tensor& x) const {
+    VIT_NVTX_RANGE("gelu");
     vit_float val;
     #pragma omp parallel for collapse(3) private(val) shared(x) schedule(static)
     for (int i=0;i<x.get_B();++i) {
@@ -389,6 +393,7 @@ void global_pool_nlc (
     vit_size num_prefix_tokens,
     vit_bool reduce_include_prefix
 ) {
+    VIT_NVTX_RANGE("pool");
     vit_float val;
     vit_float max_val;
     vit_float avg_val;

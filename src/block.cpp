@@ -4,6 +4,7 @@
 #include "../include/modules.h"
 #include "../include/mlp.h"
 #include "../include/attention.h"
+#include "../include/vit_nvtx.h"
 
 #include <utility>
 #include <assert.h>
@@ -151,21 +152,27 @@ void Block::timed_forward(
 ) const {
     auto start_time = std::chrono::high_resolution_clock::now();
     Tensor y;
-    y.copy_tensor(x_in);
-    norm1(y);
-    attn.forward(y, y);
-    ls1(y);
-    y += x_in;
+    {
+        VIT_NVTX_RANGE("blk_attn");
+        y.copy_tensor(x_in);
+        norm1(y);
+        attn.forward(y, y);
+        ls1(y);
+        y += x_in;
+    }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
     attn_time = elapsed.count();
 
     start_time = std::chrono::high_resolution_clock::now();
-    x_out.copy_tensor(y);
-    norm2(x_out);
-    mlp.forward(x_out, x_out);
-    ls2(x_out);
-    x_out += y;
+    {
+        VIT_NVTX_RANGE("blk_mlp");
+        x_out.copy_tensor(y);
+        norm2(x_out);
+        mlp.forward(x_out, x_out);
+        ls2(x_out);
+        x_out += y;
+    }
     end_time = std::chrono::high_resolution_clock::now();
     elapsed = end_time - start_time;
     mlp_time = elapsed.count();

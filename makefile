@@ -14,6 +14,20 @@ TEST_BIN_FOLDER := test_bin
 TEST_OBJ_FOLDER := test_obj
 TEST_SRC_FOLDER := test_src
 
+# --- NVTX profiling build (Nsight Systems) ---------------------------------
+# Same code + flags as the normal build, plus debug info and NVTX ranges
+# (gated by -DUSE_NVTX in include/vit_nvtx.h). Objects go to separate folders
+# so the benchmark artifacts in obj/ and omp_obj/ are never clobbered.
+# CUDA_HOME must point at a CUDA toolkit that provides nvtx3/nvToolsExt.h.
+CUDA_HOME ?= /usr/local/cuda
+NVTX_INC := -I$(CUDA_HOME)/include
+NVTX_LIB := -ldl
+PROF_CFLAGS := $(CFLAGS) -g -fno-omit-frame-pointer -DUSE_NVTX $(NVTX_INC)
+
+PROF_BIN_FOLDER := prof_bin
+PROF_OBJ_FOLDER := prof_obj
+OMP_PROF_OBJ_FOLDER := omp_prof_obj
+
 
 
 all : vit
@@ -21,11 +35,13 @@ all : vit
 clean :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* \
+		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
 		   ./out_comparison/* ./logs/*
 
 clean_everything :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* ./test_files/* \
+		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
 		   ./data/* ./models/* ./out/* ./measures/* \
 		   ./out_comparison/* ./logs/*
 
@@ -130,3 +146,80 @@ $(OBJ_FOLDER)/vision_transformer.o \
 $(OBJ_FOLDER)/utils.o \
 $(TEST_OBJ_FOLDER)/%.o
 	$(CC) $(CFLAGS) $^ -o $@
+
+
+
+# ===========================================================================
+# NVTX profiling builds (for Nsight Systems)
+# ===========================================================================
+# Convenience targets:
+#   make prof_cpp   -> prof_bin/vit_prof.exe       (serial, NVTX, debug info)
+#   make prof_omp   -> prof_bin/vit_omp_prof.exe   (OpenMP, NVTX, debug info)
+#   make prof       -> both
+# Override the CUDA toolkit location if nvtx3 headers live elsewhere:
+#   make prof CUDA_HOME=/opt/cuda
+.PHONY : prof prof_cpp prof_omp
+prof : prof_cpp prof_omp
+prof_cpp : $(PROF_BIN_FOLDER)/vit_prof.exe
+prof_omp : $(PROF_BIN_FOLDER)/vit_omp_prof.exe
+
+# Serial profiling OBJs (every source, all NVTX-instrumented)
+$(PROF_OBJ_FOLDER)/datatypes.o \
+$(PROF_OBJ_FOLDER)/modules.o \
+$(PROF_OBJ_FOLDER)/mlp.o \
+$(PROF_OBJ_FOLDER)/conv2d.o \
+$(PROF_OBJ_FOLDER)/attention.o \
+$(PROF_OBJ_FOLDER)/block.o \
+$(PROF_OBJ_FOLDER)/patch_embed.o \
+$(PROF_OBJ_FOLDER)/vision_transformer.o \
+$(PROF_OBJ_FOLDER)/utils.o \
+$(PROF_OBJ_FOLDER)/main.o \
+\
+: $(PROF_OBJ_FOLDER)/%.o : $(SRC_FOLDER)/%.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(PROF_CFLAGS) $^ -o $@
+
+# OpenMP profiling OBJs (the subset that has an omp_src override)
+$(OMP_PROF_OBJ_FOLDER)/datatypes.o \
+$(OMP_PROF_OBJ_FOLDER)/modules.o \
+$(OMP_PROF_OBJ_FOLDER)/conv2d.o \
+$(OMP_PROF_OBJ_FOLDER)/attention.o \
+$(OMP_PROF_OBJ_FOLDER)/vision_transformer.o \
+\
+: $(OMP_PROF_OBJ_FOLDER)/%.o : $(OMP_SRC_FOLDER)/%.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(PROF_CFLAGS) $(OMPFLAGS) $^ -o $@
+
+# Serial profiling executable
+$(PROF_BIN_FOLDER)/vit_prof.exe : \
+\
+$(PROF_OBJ_FOLDER)/datatypes.o \
+$(PROF_OBJ_FOLDER)/modules.o \
+$(PROF_OBJ_FOLDER)/mlp.o \
+$(PROF_OBJ_FOLDER)/conv2d.o \
+$(PROF_OBJ_FOLDER)/attention.o \
+$(PROF_OBJ_FOLDER)/block.o \
+$(PROF_OBJ_FOLDER)/patch_embed.o \
+$(PROF_OBJ_FOLDER)/vision_transformer.o \
+$(PROF_OBJ_FOLDER)/utils.o \
+$(PROF_OBJ_FOLDER)/main.o
+	@mkdir -p $(@D)
+	$(CC) $(PROF_CFLAGS) $^ -o $@ $(NVTX_LIB)
+
+# OpenMP profiling executable (same object mix as omp_bin/vit.exe:
+# omp overrides for datatypes/modules/conv2d/attention/vision_transformer,
+# serial builds for the rest -- all NVTX-instrumented)
+$(PROF_BIN_FOLDER)/vit_omp_prof.exe : \
+\
+$(OMP_PROF_OBJ_FOLDER)/datatypes.o \
+$(OMP_PROF_OBJ_FOLDER)/modules.o \
+$(PROF_OBJ_FOLDER)/mlp.o \
+$(OMP_PROF_OBJ_FOLDER)/conv2d.o \
+$(OMP_PROF_OBJ_FOLDER)/attention.o \
+$(PROF_OBJ_FOLDER)/block.o \
+$(PROF_OBJ_FOLDER)/patch_embed.o \
+$(OMP_PROF_OBJ_FOLDER)/vision_transformer.o \
+$(PROF_OBJ_FOLDER)/utils.o \
+$(PROF_OBJ_FOLDER)/main.o
+	@mkdir -p $(@D)
+	$(CC) $(PROF_CFLAGS) $(OMPFLAGS) $^ -o $@ $(NVTX_LIB)

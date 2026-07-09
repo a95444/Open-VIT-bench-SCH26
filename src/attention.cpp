@@ -2,6 +2,7 @@
 
 #include "../include/datatypes.h"
 #include "../include/modules.h"
+#include "../include/vit_nvtx.h"
 
 #include <utility>
 #include <assert.h>
@@ -188,6 +189,7 @@ void Attention::multi_head_attention(
 
     vit_float val;
     vit_float cumulative;
+    VIT_NVTX_RANGE("attention"); // scaled dot-product core: QK^T, softmax, A*V
     for (int batch=0;batch<y.get_B();++batch) {
         for (int nh=0;nh<num_heads;++nh) {
 
