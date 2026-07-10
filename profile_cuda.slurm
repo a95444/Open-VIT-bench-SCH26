@@ -27,20 +27,15 @@ module load cuda
 # and the input .cpic. Comment out once models/ and data/prof/ exist.
 source venv/bin/activate
 
-# OpenMP threads for the parallel attention (CPU) that runs alongside the GPU Linear
-export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
-export OMP_PROC_BIND=close
-export OMP_PLACES=cores
-
 B="${B:-16}"
 MODEL="models/vit_1.cvit"
 PIC="data/prof/pic_b${B}.cpic"
 mkdir -p reports data/prof
 
-echo "node = $(hostname) | gpu = $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1) | B = $B | OMP threads = $OMP_NUM_THREADS"
+echo "node = $(hostname) | gpu = $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1) | B = $B | "
 
-### 1. build: NVTX-instrumented CUDA binary only ###
-make cuda_prof
+### 1. build: NVTX CUDA binary — Linear on GPU, every other kernel serial CPU ###
+make cuda_serial_prof
 
 ### 2. model + input (generated once, then reused) ###
 [ -f "$MODEL" ] || bash create_models.sh
@@ -50,7 +45,7 @@ make cuda_prof
 echo; echo "=== nsys capture (GPU) -> reports/cuda_b${B}.nsys-rep ==="
 nsys profile --trace=cuda,nvtx,osrt --force-overwrite=true \
      -o "reports/cuda_b${B}" \
-     ./cuda_bin/vit_cuda_prof.exe "$MODEL" "$PIC" "reports/gpu_b${B}.cprd" /tmp/m.csv
+     ./cuda_bin/vit_cuda_serial_prof.exe "$MODEL" "$PIC" "reports/gpu_b${B}.cprd" /tmp/m.csv
 
 ### 4. text summaries (GPU kernels + memory transfers) ###
 echo; echo "=== NVTX ranges (CPU stages + linear; look at where time goes) ==="

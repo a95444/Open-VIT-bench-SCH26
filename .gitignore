@@ -15,6 +15,7 @@
 
 /cuda_obj
 /cuda_prof_obj
+/cuda_serial_prof_obj
 /cuda_bin
 
 /data

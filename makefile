@@ -36,6 +36,7 @@ CUDA_BIN_FOLDER := cuda_bin
 CUDA_OBJ_FOLDER := cuda_obj
 CUDA_SRC_FOLDER := cuda_src
 CUDA_PROF_OBJ_FOLDER := cuda_prof_obj
+CUDA_SERIAL_PROF_OBJ_FOLDER := cuda_serial_prof_obj
 # NVTX-instrumented CUDA flags (Nsight timeline shows the CPU stages too)
 CUDA_NVTX_FLAGS := -g -DUSE_NVTX -I$(CUDA_HOME)/include
 
@@ -47,14 +48,14 @@ clean :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* \
 		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
-		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_PROF_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
+		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_PROF_OBJ_FOLDER)/* ./$(CUDA_SERIAL_PROF_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
 		   ./out_comparison/* ./logs/*
 
 clean_everything :
 	rm -rf ./$(OBJ_FOLDER)/* ./$(BIN_FOLDER)/* ./$(OMP_OBJ_FOLDER)/* ./$(OMP_BIN_FOLDER)/* \
 		   ./$(TEST_OBJ_FOLDER)/* ./$(TEST_BIN_FOLDER)/* ./test_files/* \
 		   ./$(PROF_OBJ_FOLDER)/* ./$(OMP_PROF_OBJ_FOLDER)/* ./$(PROF_BIN_FOLDER)/* \
-		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_PROF_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
+		   ./$(CUDA_OBJ_FOLDER)/* ./$(CUDA_PROF_OBJ_FOLDER)/* ./$(CUDA_SERIAL_PROF_OBJ_FOLDER)/* ./$(CUDA_BIN_FOLDER)/* \
 		   ./data/* ./models/* ./out/* ./measures/* \
 		   ./out_comparison/* ./logs/*
 
@@ -346,3 +347,52 @@ $(CUDA_PROF_OBJ_FOLDER)/utils.o \
 $(CUDA_PROF_OBJ_FOLDER)/main.o
 	@mkdir -p $(@D)
 	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp $^ -o $@ -ldl
+
+
+
+# ===========================================================================
+# CUDA SERIAL profiling build: only Linear on the GPU, EVERY other kernel is
+# the plain serial C++ from src/ (no OpenMP). NVTX on, so the Nsight timeline
+# still shows the CPU stages next to the GPU work.
+# ===========================================================================
+#   make cuda_serial_prof   -> cuda_bin/vit_cuda_serial_prof.exe
+# modules.cu is built WITHOUT -fopenmp, so its layernorm/gelu/pool pragmas are
+# ignored (serial). Isolated in cuda_serial_prof_obj/.
+.PHONY : cuda_serial_prof
+cuda_serial_prof : $(CUDA_BIN_FOLDER)/vit_cuda_serial_prof.exe
+
+# CUDA translation unit (Linear kernel); no -fopenmp -> serial layernorm/gelu/pool
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/modules.o : $(CUDA_SRC_FOLDER)/modules.cu
+	@mkdir -p $(@D)
+	$(NVCC) -c $(NVCCFLAGS) $(CUDA_NVTX_FLAGS) $< -o $@
+
+# every CPU unit is the plain serial src/ version (+ NVTX)
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/datatypes.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/mlp.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/conv2d.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/attention.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/block.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/patch_embed.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/vision_transformer.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/utils.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/main.o \
+\
+: $(CUDA_SERIAL_PROF_OBJ_FOLDER)/%.o : $(SRC_FOLDER)/%.cpp
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) -DUSE_NVTX -I$(CUDA_HOME)/include $< -o $@
+
+# link with nvcc (CUDA runtime) + -ldl for NVTX; no OpenMP runtime
+$(CUDA_BIN_FOLDER)/vit_cuda_serial_prof.exe : \
+\
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/modules.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/datatypes.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/mlp.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/conv2d.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/attention.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/block.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/patch_embed.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/vision_transformer.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/utils.o \
+$(CUDA_SERIAL_PROF_OBJ_FOLDER)/main.o
+	@mkdir -p $(@D)
+	$(NVCC) $(NVCCFLAGS) $^ -o $@ -ldl
